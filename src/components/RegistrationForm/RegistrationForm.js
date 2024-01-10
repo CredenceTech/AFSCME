@@ -1,121 +1,55 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html } from 'lit';
 import { v4 as uuidv4 } from 'uuid';
+import { RegistrationFormStyles } from './RegistrationForm.styles';
 
 class RegistrationForm extends LitElement {
-  static styles = css`
-  /* Style for form container */
-  .form-container {
-    max-width: 400px;
-    margin: 0 auto;
-    padding: 20px;
-    background-color: #f4f4f4;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Style for headings */
-  h1 {
-    text-align: center;
-    color: #333;
-  }
-
-  /* Style for labels */
-  label {
-    display: block;
-    margin-bottom: 5px;
-    color: #333;
-  }
-
-  /* Style for inputs and selects */
-  input[type='text'],
-  input[type='email'],
-  select {
-    width: 100%;
-    padding: 8px;
-    margin-bottom: 15px;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-  }
-
-  /* Style for the error message */
-  .error {
-    color: red;
-    margin-bottom: 10px;
-  }
-
-  /* Style for the submit button */
-  button[type='submit'] {
-    width: 100%;
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #007bff;
-    color: #fff;
-    cursor: pointer;
-  }
-
-  /* Style for the submit button on hover */
-  button[type='submit']:hover {
-    background-color: #0056b3;
-  }
-
-  /* Style for the cancel button */
-  button[type='reset'] {
-    width: 100%;
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #ccc;
-    color: #333;
-    cursor: pointer;
-    / * margin-top: 10px; */
-  }
-
-  /* Style for the cancel button on hover */
-  button[type='reset']:hover {
-    background-color: #999;
-  }
-
-  /* Style for the buttons container */
-  .button-container {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 15px;
-  }
-
-  /* Style for the buttons */
-  button[type='submit'],
-  button[type='reset'] {
-    width: 48%; /* Adjust the width as needed */
-  }
-`;
-
+  static styles = RegistrationFormStyles;
 
   firstName = '';
   lastName = '';
   state = '';
   affiliation = '';
   email = '';
-  states = ['NY', 'CA', 'FL']; // Replace with your state list
-  affiliations = {
-    'NY': ['L100', 'L102', 'L105'],
-    'CA': ['C31', 'C1', 'C3'],
-    'FL': ['R-Retiree 1', 'R-Retiree 2']
-  }; // Replace with your affiliation list based on states
+  affiliations = {};
   emailError = '';
+  static get properties() {
+    return {
+      users: { type: Array },
+      isUserSelected: { type: Number },
+      states: { type: Array }
+    }
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    this.fetchUsers();
+  }
+  async fetchUsers() {
+    let response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/users', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    let items = await response.text();
+    items = JSON.parse(items);
+    this.users = items.data;
+  }
 
   async handleSubmit(e) {
     const validEmail = this.validateEmail(this.email);
     if (!validEmail) {
       this.emailError = 'Invalid email format';
+      this.requestUpdate();
+      e.preventDefault();
     } else {
+      this.emailError = '';
+      this.requestUpdate();
       if (e) {
         e.preventDefault(); // Prevent the default form submission behavior
         //document.getElementById('registerButton').disabled = true;
       }
       // Save data to Dynamo table
       this.saveData(e);
-
     }
   }
 
@@ -134,7 +68,7 @@ class RegistrationForm extends LitElement {
 
   validateEmail(email) {
     // Validate email using a simple regex for domain format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = /^((?!\.)[\w-_.]*[^.])(@\w+)(\.\w+(\.\w+)?[^.\W])$/gim;
     return emailRegex.test(email);
   }
 
@@ -187,7 +121,7 @@ class RegistrationForm extends LitElement {
 
 
   showSuccessMessage() {
-    alert('Registration is succesfully.');
+    alert('Your Account has been submitted to AFSCME for review.');
   }
 
   onStateChange(e) {
@@ -196,46 +130,118 @@ class RegistrationForm extends LitElement {
     console.log(this.state);
     this.updateAffiliationOptions(); // Update affiliation options
   }
+  async onUsersChange(e) {
+    let user = e.target.value;
+    if (user) {
+      this.isUserSelected = 1;
+      let response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/states', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      let items = await response.text();
+      items = JSON.parse(items);
+      this.states = items.data;
+    } else
+      this.isUserSelected = 0;
 
+  }
+  getSelectValues(select) {
+    var result = [];
+    var options = select && select.options;
+    var opt;
+
+    for (var i = 0, iLen = options.length; i < iLen; i++) {
+      opt = options[i];
+
+      if (opt.selected) {
+        result.push(opt.value || opt.text);
+      }
+    }
+    return result;
+  }
   onAffiliationChange(e) {
-    this.affiliation = e.target.value;
-    console.log(this.affiliation);
+    this.affiliation = this.getSelectValues(e.target).join();
     this.updateAffiliationOptions(); // Update affiliation options
   }
 
-  updateAffiliationOptions() {
+  async updateAffiliationOptions() {
+    if (!this.state) {
+      this.affiliations = [];
+      this.requestUpdate();
+      return;
+    }
+
+
+    let response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/affiliations?state=' + this.state, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    let items = await response.text();
+    items = JSON.parse(items);
+    this.affiliations = items.data.map(item => item.affiliate_name);
     // Trigger a re-render to update the affiliation dropdown based on the selected state
     this.requestUpdate();
   }
 
   render() {
     return html`
-      <div class="form-container">
-      <h1>Registration Form</h1>
-        <form @reset=${this.resetForm} @submit=${this.handleSubmit}>
-          <label for="firstName">First Name:</label>
+      ${!this.isUserSelected ?
+        html`
+        <div class="container" id="form">
+        <div class="input-group">
+          <label for="users">User</label>
+          <select
+            id="users"
+            @change=${this.onUsersChange}
+            required
+          >
+            <option value="" selected disabled>Select User</option>
+            ${this.users?.map(
+          (user) => html`<option value=${user.id}>${user.firstname + " " + user.lastname}</option>`
+        )}
+          </select>
+          </div>
+        </div>`:
+        html`
+      <div class="container">
+        
+        <form id="form" @reset=${this.resetForm} @submit=${this.handleSubmit}>
+        <h1>Registration Form</h1>
+        <div class="input-group flex-row">  
+        <div class="input-item"> 
+        <label for="firstName">First Name:</label>
           <input
             id="firstName"
             type="text"
             .value=${this.firstName}
             @input=${(e) => {
-        this.firstName = e.target.value;
-      }}
+            this.firstName = e.target.value;
+          }}
             required
           />
+          </div>
 
+          <div class="input-item">
           <label for="lastName">Last Name:</label>
           <input
             id="lastName"
             type="text"
             .value=${this.lastName}
             @input=${(e) => {
-        this.lastName = e.target.value;
-      }}
+            this.lastName = e.target.value;
+          }}
             required
           />
+          </div>
+          </div>
+          
 
      
+          <div class="input-group"> 
           <label for="state">State:</label>
           <select
             id="state"
@@ -243,41 +249,43 @@ class RegistrationForm extends LitElement {
             required
           >
             <option value="" selected disabled>Select State</option>
-            ${this.states.map(
-        (state) => html`<option value=${state}>${state}</option>`
-      )}
+            ${this.states ? this.states.map(
+            (state) => html`<option value=${state}>${state}</option>`
+          ) : ''}
           </select>
+          </div>
 
        
-
+          <div class="input-group"> 
           <label for="affiliation">Affiliation:</label>
           <select
             id="affiliation" .disabled=${!this.state}
             @change=${this.onAffiliationChange}
             required
+            multiple
           >
             <option value="" selected disabled>Select Affiliation</option>
-            ${this.state ? this.affiliations[this.state]?.map(
-        (affiliation) => html`<option value=${affiliation}>${affiliation}</option>`
-      ) : ''}
+            ${this.state ? this.affiliations?.map(
+            (affiliation) => html`<option value=${affiliation}>${affiliation}</option>`
+          ) : ''}
           </select>
-
-       
+         </div>      
 
           
-
+         <div class="input-group"> 
           <label for="email">Email:</label>
           <input
             id="email"
             type="email"
             .value=${this.email}
             @input=${(e) => {
-        this.email = e.target.value;
-        this.emailError = ''; // Clear error when typing
-      }}
+            this.email = e.target.value;
+            this.emailError = ''; // Clear error when typing
+          }}
             required
           />
           <div class="error">${this.emailError}</div>
+          </div>
 
           <!-- Buttons container -->
           <div class="button-container">
@@ -285,11 +293,11 @@ class RegistrationForm extends LitElement {
             <button id="registerButton"  type="submit">Register</button>
       
             <!-- Cancel button -->
-            <button type="reset">Cancel</button>
+            <!-- <button type="reset">Cancel</button> -->
           </div>
         </form>
       </div>     
-    `;
+    `}`
   }
 }
 
