@@ -11,18 +11,23 @@ class RegistrationForm extends LitElement {
   affiliation = '';
   email = '';
   affiliations = {};
-  emailError = '';
   static get properties() {
     return {
       users: { type: Array },
       isUserSelected: { type: Number },
-      states: { type: Array }
+      states: { type: Array },
+      emailError: { type: String }
     }
   }
   connectedCallback() {
     super.connectedCallback();
     this.fetchUsers();
   }
+
+  /**
+   * This will fetch all the Users from the database to populate the dropdown on page load.
+   * @returns {Promise<void>}
+   */
   async fetchUsers() {
     let response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/users', {
       method: 'GET',
@@ -39,19 +44,17 @@ class RegistrationForm extends LitElement {
     const validEmail = this.validateEmail(this.email);
     if (!validEmail) {
       this.emailError = 'Invalid email format';
-      this.requestUpdate();
       e.preventDefault();
     } else {
       this.emailError = '';
-      this.requestUpdate();
       if (e) {
-        e.preventDefault(); // Prevent the default form submission behavior
-        //document.getElementById('registerButton').disabled = true;
+        e.preventDefault();
       }
       // Save data to Dynamo table
       this.saveData(e);
     }
   }
+
 
   resetForm() {
     const form = this.shadowRoot.querySelector('form');
@@ -72,10 +75,12 @@ class RegistrationForm extends LitElement {
     return emailRegex.test(email);
   }
 
-  saveData(e) {
+  /**
+  * Logic to save data to Dynamo Database.
+  * @returns {Promise<void>}
+  */
+  async saveData(e) {
 
-    // Logic to save data to Dynamo DB
-    // For demo purposes, display user selection on the console
     const registrationData = {
       id: uuidv4(),
       firstname: this.firstName,
@@ -86,50 +91,45 @@ class RegistrationForm extends LitElement {
       role: 'User',
       status: 'Pending'
     };
-    console.log('User Selection:', registrationData);
 
-
-
-    fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/users', {
+    const response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/users', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(registrationData),
-    })
-      .then(async (response) => {
-        console.log("response", response);
-        if (response.ok) {
-          //Show success message
-          this.showSuccessMessage();
-          this.resetForm();
-          if (e) {
-            // Remove preventDefault after successful registration
-            e.preventDefault = null;
-          }
-          this.updateAffiliationOptions();
-        } else {
-          alert('Registration failed. Please try again later.');
-        }
-      })
-      .catch((error) => {
-        console.error('Error registering:', error);
-        alert('There was an error during registration. Please try again later.');
-      });
+    });
+
+    if (response.ok) {
+      this.showSuccessMessage();
+      this.resetForm();
+      if (e) {
+        e.preventDefault = null;
+      }
+      this.updateAffiliationOptions();
+    } else {
+      throw new Error('Registration failed. Please try again later.');
+    }
   }
-
-
 
   showSuccessMessage() {
     alert('Your Account has been submitted to AFSCME for review.');
   }
 
+
+  /**
+   * This will fetch all the affiliation from the database to populate the dropdown after state selection.
+   * @returns {Promise<void>}
+   */
   onStateChange(e) {
     this.state = e.target.value;
-    this.affiliation = ''; // Reset affiliation on state change
+    this.affiliation = '';
     console.log(this.state);
-    this.updateAffiliationOptions(); // Update affiliation options
+    this.updateAffiliationOptions();
   }
+
+  /**
+   * This will fetch all the state from the database to populate the dropdown after user selection.
+   * @returns {Promise<void>}
+   */
   async onUsersChange(e) {
     let user = e.target.value;
     if (user) {
@@ -145,8 +145,8 @@ class RegistrationForm extends LitElement {
       this.states = items.data;
     } else
       this.isUserSelected = 0;
-
   }
+
   getSelectValues(select) {
     var result = [];
     var options = select && select.options;
@@ -161,9 +161,10 @@ class RegistrationForm extends LitElement {
     }
     return result;
   }
+  
   onAffiliationChange(e) {
     this.affiliation = this.getSelectValues(e.target).join();
-    this.updateAffiliationOptions(); // Update affiliation options
+    this.updateAffiliationOptions();
   }
 
   async updateAffiliationOptions() {
@@ -172,7 +173,6 @@ class RegistrationForm extends LitElement {
       this.requestUpdate();
       return;
     }
-
 
     let response = await fetch('https://83k4jems55.execute-api.us-east-1.amazonaws.com/affiliations?state=' + this.state, {
       method: 'GET',
@@ -183,6 +183,7 @@ class RegistrationForm extends LitElement {
     let items = await response.text();
     items = JSON.parse(items);
     this.affiliations = items.data.map(item => item.affiliate_name);
+
     // Trigger a re-render to update the affiliation dropdown based on the selected state
     this.requestUpdate();
   }
@@ -207,12 +208,10 @@ class RegistrationForm extends LitElement {
           </div>
         </div>`:
         html`
-      <div class="container">
-        
+      <div class="container">        
         <form id="form" @reset=${this.resetForm} @submit=${this.handleSubmit}>
         <h1>Registration Form</h1>
-        <div class="input-group flex-row">  
-        <div class="input-item"> 
+        <div class="input-group">  
         <label for="firstName">First Name:</label>
           <input
             id="firstName"
@@ -225,7 +224,7 @@ class RegistrationForm extends LitElement {
           />
           </div>
 
-          <div class="input-item">
+          <div class="input-group">
           <label for="lastName">Last Name:</label>
           <input
             id="lastName"
@@ -236,11 +235,8 @@ class RegistrationForm extends LitElement {
           }}
             required
           />
-          </div>
-          </div>
-          
+          </div>    
 
-     
           <div class="input-group"> 
           <label for="state">State:</label>
           <select
@@ -254,7 +250,6 @@ class RegistrationForm extends LitElement {
           ) : ''}
           </select>
           </div>
-
        
           <div class="input-group"> 
           <label for="affiliation">Affiliation:</label>
@@ -269,8 +264,7 @@ class RegistrationForm extends LitElement {
             (affiliation) => html`<option value=${affiliation}>${affiliation}</option>`
           ) : ''}
           </select>
-         </div>      
-
+         </div>     
           
          <div class="input-group"> 
           <label for="email">Email:</label>
@@ -301,6 +295,4 @@ class RegistrationForm extends LitElement {
   }
 }
 
-
 customElements.define('registration-form', RegistrationForm);
-
